@@ -166,12 +166,20 @@ npm start
 
 **Get Records** – Query Parameters:
 | Parameter | Type | Description |
-| ---------- | ------ | -------------------------------- |
+| ----------- | ------ | ------------------------------------ |
 | `type` | String | Filter by `income` or `expense` |
 | `category` | String | Filter by category name |
+| `startDate` | String | Filter from date (ISO 8601) |
+| `endDate` | String | Filter to date (ISO 8601) |
 | `search` | String | Search in category, notes & type |
 | `page` | Number | Page number (default: 1) |
 | `limit` | Number | Records per page (default: 10) |
+
+**Example – Date filtering:**
+
+```
+GET /api/records?startDate=2026-01-01&endDate=2026-03-31&type=income
+```
 
 > **Note:** Viewer can only see their own records. Admin and Analyst can see all records.
 
@@ -179,11 +187,12 @@ npm start
 
 ### Dashboard
 
-| Method | Endpoint                 | Description                           | Access        |
-| ------ | ------------------------ | ------------------------------------- | ------------- |
-| GET    | `/api/dashboard/summary` | Get income, expense & balance summary | Authenticated |
+| Method | Endpoint                 | Description                               | Access        |
+| ------ | ------------------------ | ----------------------------------------- | ------------- |
+| GET    | `/api/dashboard/summary` | Get income, expense & balance summary     | Authenticated |
+| GET    | `/api/dashboard/trends`  | Get monthly income/expense/balance trends | Authenticated |
 
-**Response:**
+**Summary Response:**
 
 ```json
 {
@@ -192,6 +201,18 @@ npm start
   "balance": 8000
 }
 ```
+
+**Trends Response:**
+
+```json
+[
+  { "month": "2026-01", "income": 5000, "expense": 2000, "balance": 3000 },
+  { "month": "2026-02", "income": 6000, "expense": 3000, "balance": 3000 },
+  { "month": "2026-03", "income": 4000, "expense": 2000, "balance": 2000 }
+]
+```
+
+> Admin & Analyst see trends across all users. Viewer sees only their own trends.
 
 ---
 
@@ -206,6 +227,7 @@ All incoming request data is validated at the route level using `express-validat
 | `POST /api/auth/register` | `name` (2-50 chars), `email` (valid format), `password` (min 6 chars), `role` (optional, enum)                                        |
 | `POST /api/auth/login`    | `email` (valid format), `password` (required)                                                                                         |
 | `POST /api/records`       | `userId` (MongoId), `amount` (numeric), `type` (income/expense), `category` (max 100), `date` (ISO 8601), `notes` (optional, max 500) |
+| `GET /api/records`        | `type` (optional, enum), `startDate`/`endDate` (optional, ISO 8601), `page` (positive int), `limit` (1-100)                           |
 | `PUT /api/records/:id`    | `id` (MongoId), all body fields optional with same rules as create                                                                    |
 | `DELETE /api/records/:id` | `id` (MongoId)                                                                                                                        |
 | `PUT /api/users/:id`      | `id` (MongoId), `name`, `email`, `role`, `status` (all optional with format checks)                                                   |
@@ -288,19 +310,19 @@ Both models include automatic `createdAt` and `updatedAt` timestamps.
 
 ## Comprehensive Test Report
 
-All **66 tests passed** across 3 suites — input validation, role-based access, and search scoping.
+All **76 tests passed** across 3 suites — input validation, role-based access, and search scoping.
 
 ### Suite Summary
 
 | Suite              | Passed | Failed | Total |
 | ------------------ | ------ | ------ | ----- |
-| **Validation**     | 25     | 0      | 25    |
-| **Role-Based**     | 35     | 0      | 35    |
+| **Validation**     | 30     | 0      | 30    |
+| **Role-Based**     | 40     | 0      | 40    |
 | **Search Scoping** | 6      | 0      | 6     |
 
 ---
 
-### 1. Input Validation Tests (25/25 Passed)
+### 1. Input Validation Tests (30/30 Passed)
 
 #### Register Validation
 
@@ -336,6 +358,16 @@ All **66 tests passed** across 3 suites — input validation, role-based access,
 | Invalid type update | `type: "refund"` on PUT              | 400      | 400    | ✅     |
 | Invalid delete ID   | `DELETE /api/records/not-a-valid-id` | 400      | 400    | ✅     |
 
+#### GET Records Query Validation
+
+| Test Case         | Input                     | Expected | Actual | Status |
+| ----------------- | ------------------------- | -------- | ------ | ------ |
+| Invalid startDate | `startDate: "not-a-date"` | 400      | 400    | ✅     |
+| Invalid endDate   | `endDate: "not-a-date"`   | 400      | 400    | ✅     |
+| Invalid type      | `type: "refund"`          | 400      | 400    | ✅     |
+| Negative page     | `page: "-1"`              | 400      | 400    | ✅     |
+| Limit too high    | `limit: "200"`            | 400      | 400    | ✅     |
+
 #### User Validation
 
 | Test Case         | Input                              | Expected | Actual | Status |
@@ -349,25 +381,27 @@ All **66 tests passed** across 3 suites — input validation, role-based access,
 
 ---
 
-### 2. Role-Based Access Tests (35/35 Passed)
+### 2. Role-Based Access Tests (40/40 Passed)
 
 #### Results Matrix
 
-| Route                         | Method | Admin  | Analyst | Viewer | No Token |
-| ----------------------------- | ------ | ------ | ------- | ------ | -------- |
-| `/api/auth/register`          | POST   | —      | —       | —      | ✅ 201   |
-| `/api/auth/login`             | POST   | —      | —       | —      | ✅ 200   |
-| `/api/users`                  | GET    | ✅ 200 | ❌ 403  | ❌ 403 | ❌ 401   |
-| `/api/users/:id`              | PUT    | ✅ 200 | ❌ 403  | ❌ 403 | —        |
-| `/api/users/:id`              | DELETE | ✅ 200 | ❌ 403  | ❌ 403 | —        |
-| `/api/records`                | POST   | ✅ 201 | ❌ 403  | ❌ 403 | ❌ 401   |
-| `/api/records`                | GET    | ✅ 200 | ✅ 200  | ✅ 200 | ❌ 401   |
-| `/api/records?type=income`    | GET    | ✅ 200 | ✅ 200  | ✅ 200 | —        |
-| `/api/records?search=salary`  | GET    | ✅ 200 | —       | —      | —        |
-| `/api/records?page=1&limit=5` | GET    | ✅ 200 | —       | —      | —        |
-| `/api/records/:id`            | PUT    | ✅ 200 | ❌ 403  | ❌ 403 | —        |
-| `/api/records/:id`            | DELETE | ✅ 200 | ❌ 403  | ❌ 403 | —        |
-| `/api/dashboard/summary`      | GET    | ✅ 200 | ✅ 200  | ✅ 200 | ❌ 401   |
+| Route                            | Method | Admin  | Analyst | Viewer | No Token |
+| -------------------------------- | ------ | ------ | ------- | ------ | -------- |
+| `/api/auth/register`             | POST   | —      | —       | —      | ✅ 201   |
+| `/api/auth/login`                | POST   | —      | —       | —      | ✅ 200   |
+| `/api/users`                     | GET    | ✅ 200 | ❌ 403  | ❌ 403 | ❌ 401   |
+| `/api/users/:id`                 | PUT    | ✅ 200 | ❌ 403  | ❌ 403 | —        |
+| `/api/users/:id`                 | DELETE | ✅ 200 | ❌ 403  | ❌ 403 | —        |
+| `/api/records`                   | POST   | ✅ 201 | ❌ 403  | ❌ 403 | ❌ 401   |
+| `/api/records`                   | GET    | ✅ 200 | ✅ 200  | ✅ 200 | ❌ 401   |
+| `/api/records?type=income`       | GET    | ✅ 200 | ✅ 200  | ✅ 200 | —        |
+| `/api/records?startDate&endDate` | GET    | ✅ 200 | —       | —      | —        |
+| `/api/records?search=salary`     | GET    | ✅ 200 | —       | —      | —        |
+| `/api/records?page=1&limit=5`    | GET    | ✅ 200 | —       | —      | —        |
+| `/api/records/:id`               | PUT    | ✅ 200 | ❌ 403  | ❌ 403 | —        |
+| `/api/records/:id`               | DELETE | ✅ 200 | ❌ 403  | ❌ 403 | —        |
+| `/api/dashboard/summary`         | GET    | ✅ 200 | ✅ 200  | ✅ 200 | ❌ 401   |
+| `/api/dashboard/trends`          | GET    | ✅ 200 | ✅ 200  | ✅ 200 | ❌ 401   |
 
 > ✅ = Allowed &nbsp; ❌ = Correctly Denied
 
@@ -376,10 +410,10 @@ All **66 tests passed** across 3 suites — input validation, role-based access,
 | Role                | Passed | Failed | Total |
 | ------------------- | ------ | ------ | ----- |
 | **public**          | 12     | 0      | 12    |
-| **admin**           | 28     | 0      | 28    |
-| **analyst**         | 11     | 0      | 11    |
-| **viewer**          | 11     | 0      | 11    |
-| **unauthenticated** | 4      | 0      | 4     |
+| **admin**           | 35     | 0      | 35    |
+| **analyst**         | 12     | 0      | 12    |
+| **viewer**          | 12     | 0      | 12    |
+| **unauthenticated** | 5      | 0      | 5     |
 
 ---
 
@@ -396,10 +430,12 @@ All **66 tests passed** across 3 suites — input validation, role-based access,
 
 ### Key Observations
 
-- **Input Validation** rejects malformed data (bad emails, invalid IDs, wrong enums, short passwords) with `400` before it reaches the database.
+- **Input Validation** rejects malformed data (bad emails, invalid IDs, wrong enums, short passwords, invalid dates, out-of-range pagination) with `400` before it reaches the database.
+- **Date Filtering** supports `startDate` and `endDate` query params for filtering records by date range.
+- **Monthly Trends** API provides income/expense/balance breakdown per month, with role-based scoping.
 - **Admin** has full CRUD access to users, records, and dashboard.
-- **Analyst** can view/search all records and view dashboard summary (all users' data). Cannot create, update, or delete records.
-- **Viewer** can only view/search their own records and view their own dashboard summary.
+- **Analyst** can view/search all records and view dashboard summary & trends (all users' data). Cannot create, update, or delete records.
+- **Viewer** can only view/search their own records and view their own dashboard summary & trends.
 - **Unauthenticated** requests are correctly rejected with `401` on all protected routes.
 - `POST /api/records` route middleware allows `admin` and `analyst`, but the controller has an additional `admin`-only check — effectively only admin can create records.
-- Search, filter (`type`, `category`), and pagination (`page`, `limit`) work correctly with role-based scoping.
+- Search, filter (`type`, `category`, `date`), and pagination (`page`, `limit`) work correctly with role-based scoping.

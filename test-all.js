@@ -215,6 +215,24 @@ async function testValidation() {
   const v19 = await req("DELETE", "/api/records/not-a-valid-id", { token: tokens.admin });
   log("validation", "admin", "DELETE", "/api/records/:id", 400, v19.status, "invalid param id → 400");
 
+  // ── GET records query validation ──
+  console.log("─── GET Records Query Validation ───");
+
+  const v26 = await req("GET", "/api/records", { token: tokens.admin, query: { startDate: "not-a-date" } });
+  log("validation", "admin", "GET", "/api/records?startDate", 400, v26.status, "invalid startDate → 400");
+
+  const v27 = await req("GET", "/api/records", { token: tokens.admin, query: { endDate: "not-a-date" } });
+  log("validation", "admin", "GET", "/api/records?endDate", 400, v27.status, "invalid endDate → 400");
+
+  const v28 = await req("GET", "/api/records", { token: tokens.admin, query: { type: "refund" } });
+  log("validation", "admin", "GET", "/api/records?type", 400, v28.status, "invalid type query → 400");
+
+  const v29 = await req("GET", "/api/records", { token: tokens.admin, query: { page: "-1" } });
+  log("validation", "admin", "GET", "/api/records?page", 400, v29.status, "negative page → 400");
+
+  const v30 = await req("GET", "/api/records", { token: tokens.admin, query: { limit: "200" } });
+  log("validation", "admin", "GET", "/api/records?limit", 400, v30.status, "limit > 100 → 400");
+
   // ── User update validation ──
   console.log("─── User Validation ───");
 
@@ -349,6 +367,10 @@ async function testRoleAccess() {
   const pr = await req("GET", "/api/records", { token: tokens.admin, query: { page: 1, limit: 5 } });
   log("role", "admin", "GET", "/api/records?page=1&limit=5", 200, pr.status, "pagination");
 
+  // GET with date filter
+  const dr = await req("GET", "/api/records", { token: tokens.admin, query: { startDate: "2026-01-01", endDate: "2026-12-31" } });
+  log("role", "admin", "GET", "/api/records?startDate&endDate", 200, dr.status, "date filter");
+
   // PUT — admin only
   if (recordForTest) {
     for (const role of ["admin", "analyst", "viewer"]) {
@@ -378,9 +400,16 @@ async function testRoleAccess() {
     log("role", role, "GET", "/api/dashboard/summary", 200, r.status);
   }
 
+  // ── Dashboard Trends ──
+  console.log("─── Dashboard Trends ───");
+  for (const role of ["admin", "analyst", "viewer"]) {
+    const r = await req("GET", "/api/dashboard/trends", { token: tokens[role] });
+    log("role", role, "GET", "/api/dashboard/trends", 200, r.status);
+  }
+
   // ── Unauthenticated ──
   console.log("─── Unauthenticated Access ───");
-  for (const [method, path] of [["GET", "/api/users"], ["GET", "/api/records"], ["POST", "/api/records"], ["GET", "/api/dashboard/summary"]]) {
+  for (const [method, path] of [["GET", "/api/users"], ["GET", "/api/records"], ["POST", "/api/records"], ["GET", "/api/dashboard/summary"], ["GET", "/api/dashboard/trends"]]) {
     const r = await req(method, path);
     log("role", "none", method, path, 401, r.status, "no token");
   }

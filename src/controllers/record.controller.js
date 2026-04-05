@@ -43,7 +43,7 @@ export const getRecords = async (req, res) => {
       filter.userId = new mongoose.Types.ObjectId(req.user.id);
     }
 
-    const { type, category, search, page = 1, limit = 10 } = req.query;
+    const { type, category, search, startDate, endDate, page = 1, limit = 10 } = req.query;
 
     if (type) {
       filter.type = type;
@@ -51,6 +51,13 @@ export const getRecords = async (req, res) => {
 
     if (category) {
       filter.category = category;
+    }
+
+    // Date filtering
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) filter.date.$gte = new Date(startDate);
+      if (endDate) filter.date.$lte = new Date(endDate);
     }
 
     // Search
