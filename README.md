@@ -11,6 +11,7 @@ A RESTful backend API for managing financial records (income & expense), built w
 - **Database:** MongoDB (Mongoose ODM)
 - **Authentication:** JWT (JSON Web Token)
 - **Password Hashing:** bcryptjs
+- **Input Validation:** express-validator
 
 ---
 
@@ -31,11 +32,16 @@ finance-backendDevelopment/
     │   ├── record.controller.js    # Financial record CRUD
     │   └── dashboard.controller.js # Income/Expense summary
     ├── middleware/
-    │   ├── auth.middleware.js   # JWT verification
-    │   └── role.middleware.js   # Role-based access control
+    │   ├── auth.middleware.js       # JWT verification
+    │   ├── role.middleware.js       # Role-based access control
+    │   └── validate.middleware.js   # Validation error handler
     ├── models/
     │   ├── user.model.js       # User schema
     │   └── record.model.js     # Record schema
+    ├── validators/
+    │   ├── auth.validator.js       # Register & Login validation
+    │   ├── record.validator.js     # Record CRUD validation
+    │   └── user.validator.js       # User update/delete validation
     └── routes/
         ├── auth.routes.js
         ├── user.routes.js
@@ -189,6 +195,47 @@ npm start
 
 ---
 
+## Input Validation
+
+All incoming request data is validated at the route level using `express-validator` before reaching controllers or the database.
+
+### Validated Fields
+
+| Route                     | Validated Fields                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/auth/register` | `name` (2-50 chars), `email` (valid format), `password` (min 6 chars), `role` (optional, enum)                                        |
+| `POST /api/auth/login`    | `email` (valid format), `password` (required)                                                                                         |
+| `POST /api/records`       | `userId` (MongoId), `amount` (numeric), `type` (income/expense), `category` (max 100), `date` (ISO 8601), `notes` (optional, max 500) |
+| `PUT /api/records/:id`    | `id` (MongoId), all body fields optional with same rules as create                                                                    |
+| `DELETE /api/records/:id` | `id` (MongoId)                                                                                                                        |
+| `PUT /api/users/:id`      | `id` (MongoId), `name`, `email`, `role`, `status` (all optional with format checks)                                                   |
+| `DELETE /api/users/:id`   | `id` (MongoId)                                                                                                                        |
+
+### Validation Error Response
+
+When validation fails, the API returns `400` with error details:
+
+```json
+{
+  "errors": [
+    {
+      "type": "field",
+      "msg": "Invalid email format",
+      "path": "email",
+      "location": "body"
+    },
+    {
+      "type": "field",
+      "msg": "Password must be at least 6 characters",
+      "path": "password",
+      "location": "body"
+    }
+  ]
+}
+```
+
+---
+
 ## Authentication
 
 All protected routes require a JWT token in the `Authorization` header:
@@ -229,20 +276,82 @@ Both models include automatic `createdAt` and `updatedAt` timestamps.
 
 ## Scripts
 
-| Command               | Description                     |
-| --------------------- | ------------------------------- |
-| `npm start`           | Start server with Node          |
-| `npm run dev`         | Start server with Nodemon (dev) |
-| `node test-roles.js`  | Run role-based access tests     |
-| `node test-search.js` | Run search role-scoping tests   |
+| Command               | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `npm start`           | Start server with Node                            |
+| `npm run dev`         | Start server with Nodemon (dev)                   |
+| `node test-all.js`    | Run full test suite (validation + roles + search) |
+| `node test-roles.js`  | Run role-based access tests                       |
+| `node test-search.js` | Run search role-scoping tests                     |
 
 ---
 
-## Role-Based Access Test Report
+## Comprehensive Test Report
 
-All **35 tests passed** across 3 roles + unauthenticated access.
+All **66 tests passed** across 3 suites — input validation, role-based access, and search scoping.
 
-### Results Matrix
+### Suite Summary
+
+| Suite              | Passed | Failed | Total |
+| ------------------ | ------ | ------ | ----- |
+| **Validation**     | 25     | 0      | 25    |
+| **Role-Based**     | 35     | 0      | 35    |
+| **Search Scoping** | 6      | 0      | 6     |
+
+---
+
+### 1. Input Validation Tests (25/25 Passed)
+
+#### Register Validation
+
+| Test Case      | Input                   | Expected | Actual | Status |
+| -------------- | ----------------------- | -------- | ------ | ------ |
+| Empty body     | `{}`                    | 400      | 400    | ✅     |
+| Invalid email  | `email: "not-an-email"` | 400      | 400    | ✅     |
+| Short password | `password: "12"`        | 400      | 400    | ✅     |
+| Short name     | `name: "A"`             | 400      | 400    | ✅     |
+| Invalid role   | `role: "superadmin"`    | 400      | 400    | ✅     |
+| Valid data     | All fields correct      | 201      | 201    | ✅     |
+
+#### Login Validation
+
+| Test Case        | Input                    | Expected | Actual | Status |
+| ---------------- | ------------------------ | -------- | ------ | ------ |
+| Missing email    | `{ password }`           | 400      | 400    | ✅     |
+| Missing password | `{ email }`              | 400      | 400    | ✅     |
+| Invalid email    | `email: "bad-email"`     | 400      | 400    | ✅     |
+| Valid data       | Correct email & password | 200      | 200    | ✅     |
+
+#### Record Validation
+
+| Test Case           | Input                                | Expected | Actual | Status |
+| ------------------- | ------------------------------------ | -------- | ------ | ------ |
+| Empty body          | `{}`                                 | 400      | 400    | ✅     |
+| Invalid userId      | `userId: "not-a-mongo-id"`           | 400      | 400    | ✅     |
+| Invalid type        | `type: "refund"`                     | 400      | 400    | ✅     |
+| Invalid date        | `date: "not-a-date"`                 | 400      | 400    | ✅     |
+| Non-numeric amount  | `amount: "abc"`                      | 400      | 400    | ✅     |
+| Valid data          | All fields correct                   | 201      | 201    | ✅     |
+| Invalid param ID    | `PUT /api/records/not-a-valid-id`    | 400      | 400    | ✅     |
+| Invalid type update | `type: "refund"` on PUT              | 400      | 400    | ✅     |
+| Invalid delete ID   | `DELETE /api/records/not-a-valid-id` | 400      | 400    | ✅     |
+
+#### User Validation
+
+| Test Case         | Input                              | Expected | Actual | Status |
+| ----------------- | ---------------------------------- | -------- | ------ | ------ |
+| Invalid param ID  | `PUT /api/users/not-a-valid-id`    | 400      | 400    | ✅     |
+| Invalid role      | `role: "superadmin"`               | 400      | 400    | ✅     |
+| Invalid status    | `status: "banned"`                 | 400      | 400    | ✅     |
+| Invalid email     | `email: "not-an-email"`            | 400      | 400    | ✅     |
+| Valid data        | `name: "UpdatedViewer"`            | 200      | 200    | ✅     |
+| Invalid delete ID | `DELETE /api/users/not-a-valid-id` | 400      | 400    | ✅     |
+
+---
+
+### 2. Role-Based Access Tests (35/35 Passed)
+
+#### Results Matrix
 
 | Route                         | Method | Admin  | Analyst | Viewer | No Token |
 | ----------------------------- | ------ | ------ | ------- | ------ | -------- |
@@ -262,7 +371,19 @@ All **35 tests passed** across 3 roles + unauthenticated access.
 
 > ✅ = Allowed &nbsp; ❌ = Correctly Denied
 
-### Search Role-Scoping Test
+#### Summary Per Role
+
+| Role                | Passed | Failed | Total |
+| ------------------- | ------ | ------ | ----- |
+| **public**          | 12     | 0      | 12    |
+| **admin**           | 28     | 0      | 28    |
+| **analyst**         | 11     | 0      | 11    |
+| **viewer**          | 11     | 0      | 11    |
+| **unauthenticated** | 4      | 0      | 4     |
+
+---
+
+### 3. Search Role-Scoping Tests (6/6 Passed)
 
 | Search keyword                | Admin    | Analyst  | Viewer                 |
 | ----------------------------- | -------- | -------- | ---------------------- |
@@ -271,18 +392,11 @@ All **35 tests passed** across 3 roles + unauthenticated access.
 
 > Admin & Analyst can search across all records. Viewer search is scoped to their own records only.
 
-### Summary Per Role
-
-| Role                | Passed | Failed | Total |
-| ------------------- | ------ | ------ | ----- |
-| **public**          | 2      | 0      | 2     |
-| **admin**           | 11     | 0      | 11    |
-| **analyst**         | 9      | 0      | 9     |
-| **viewer**          | 9      | 0      | 9     |
-| **unauthenticated** | 4      | 0      | 4     |
+---
 
 ### Key Observations
 
+- **Input Validation** rejects malformed data (bad emails, invalid IDs, wrong enums, short passwords) with `400` before it reaches the database.
 - **Admin** has full CRUD access to users, records, and dashboard.
 - **Analyst** can view/search all records and view dashboard summary (all users' data). Cannot create, update, or delete records.
 - **Viewer** can only view/search their own records and view their own dashboard summary.
